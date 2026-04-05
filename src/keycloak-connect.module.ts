@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import {
   KEYCLOAK_CONNECT_OPTIONS,
   KEYCLOAK_MULTITENANT_SERVICE,
+  KEYCLOAK_TOKEN_CACHE_SERVICE,
 } from './constants';
 import { KeycloakConnectModuleAsyncOptions } from './interface/keycloak-connect-module-async-options.interface';
 import { KeycloakConnectOptionsFactory } from './interface/keycloak-connect-options-factory.interface';
@@ -15,22 +16,26 @@ import {
   keycloakProvider,
 } from './keycloak-connect.providers';
 import { KeycloakMultiTenantService } from './services/keycloak-multitenant.service';
+import { KeycloakTokenCacheService } from './services/keycloak-token-cache.service';
 
 export * from './constants';
 export * from './decorators/access-token.decorator';
 export * from './decorators/enforcer-options.decorator';
+export * from './decorators/groups.decorator';
 export * from './decorators/keycloak-user.decorator';
 export * from './decorators/public.decorator';
 export * from './decorators/resource.decorator';
 export * from './decorators/roles.decorator';
 export * from './decorators/scopes.decorator';
 export * from './guards/auth.guard';
+export * from './guards/group.guard';
 export * from './guards/resource.guard';
 export * from './guards/role.guard';
 export * from './interface/keycloak-connect-module-async-options.interface';
 export * from './interface/keycloak-connect-options-factory.interface';
 export * from './interface/keycloak-connect-options.interface';
 export * from './services/keycloak-multitenant.service';
+export * from './services/keycloak-token-cache.service';
 export * from './util';
 
 @Module({})
@@ -41,55 +46,57 @@ export class KeycloakConnectModule {
    * Register the `KeycloakConnect` module.
    * @param opts `keycloak.json` path in string or {@link NestKeycloakConfig} object.
    * @param config {@link NestKeycloakConfig} when using `keycloak.json` path, optional
-   * @returns
    */
   public static register(
     opts: KeycloakConnectOptions,
     config?: NestKeycloakConfig,
   ): DynamicModule {
-    const keycloakConnectProviders = [
+    const providers = this.buildProviders(
       createKeycloakConnectOptionProvider(opts, config),
-      keycloakProvider,
-      KeycloakMultiTenantService,
-      {
-        provide: KEYCLOAK_MULTITENANT_SERVICE,
-        useClass: KeycloakMultiTenantService,
-      },
-      Reflector,
-    ];
+    );
     return {
       module: KeycloakConnectModule,
-      providers: keycloakConnectProviders,
-      exports: keycloakConnectProviders,
+      providers,
+      exports: providers,
     };
   }
 
   public static registerAsync(
     opts: KeycloakConnectModuleAsyncOptions,
   ): DynamicModule {
-    const optsProvider = this.createAsyncProviders(opts);
-
+    const providers = this.createAsyncProviders(opts);
     return {
       module: KeycloakConnectModule,
       imports: opts.imports || [],
-      providers: optsProvider,
-      exports: optsProvider,
+      providers,
+      exports: providers,
     };
   }
 
-  private static createAsyncProviders(
-    options: KeycloakConnectModuleAsyncOptions,
-  ): Provider[] {
-    const reqProviders = [
-      this.createAsyncOptionsProvider(options),
+  private static buildProviders(optionsProvider: Provider): Provider[] {
+    return [
+      optionsProvider,
       keycloakProvider,
       KeycloakMultiTenantService,
       {
         provide: KEYCLOAK_MULTITENANT_SERVICE,
         useClass: KeycloakMultiTenantService,
       },
+      KeycloakTokenCacheService,
+      {
+        provide: KEYCLOAK_TOKEN_CACHE_SERVICE,
+        useClass: KeycloakTokenCacheService,
+      },
       Reflector,
     ];
+  }
+
+  private static createAsyncProviders(
+    options: KeycloakConnectModuleAsyncOptions,
+  ): Provider[] {
+    const reqProviders = this.buildProviders(
+      this.createAsyncOptionsProvider(options),
+    );
 
     if (options.useExisting || options.useFactory) {
       return reqProviders;

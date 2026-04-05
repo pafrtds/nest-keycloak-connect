@@ -74,3 +74,22 @@ export enum RoleMerge {
    */
   ALL,
 }
+
+/**
+ * Group matching mode.
+ */
+export enum GroupMatch {
+  /**
+   * User must belong to all specified groups.
+   */
+  ALL = 'all',
+  /**
+   * User must belong to at least one of the specified groups.
+   */
+  ANY = 'any',
+}
+
+/**
+ * Key for injecting the token cache service.
+ */
+export const KEYCLOAK_TOKEN_CACHE_SERVICE = 'KEYCLOAK_TOKEN_CACHE_SERVICE';

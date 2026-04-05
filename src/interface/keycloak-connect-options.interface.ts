@@ -44,6 +44,24 @@ export interface MultiTenantOptions {
 }
 
 /**
+ * Token cache configuration.
+ */
+export interface TokenCacheOptions {
+  /**
+   * Enables in-memory caching of online token validation results.
+   * Avoids hitting Keycloak on every request for the same token.
+   * NOTE: revoked tokens may be accepted until the cache entry expires.
+   */
+  enabled: boolean;
+
+  /**
+   * Maximum TTL in seconds for a cached validation result.
+   * Defaults to the token's own expiration time (exp claim).
+   */
+  maxTtl?: number;
+}
+
+/**
  * Library only configuration.
  */
 export interface NestKeycloakConfig {
@@ -61,6 +79,11 @@ export interface NestKeycloakConfig {
    * Sets the token validation method, defaults to {@link TokenValidation.ONLINE}.
    */
   tokenValidation?: TokenValidation;
+
+  /**
+   * Enables in-memory caching of online token validation results.
+   */
+  tokenCache?: TokenCacheOptions;
 
   /**
    * Multi tenant options.

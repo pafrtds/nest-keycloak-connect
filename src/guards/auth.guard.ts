@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -13,12 +14,14 @@ import {
   KEYCLOAK_COOKIE_DEFAULT,
   KEYCLOAK_INSTANCE,
   KEYCLOAK_MULTITENANT_SERVICE,
+  KEYCLOAK_TOKEN_CACHE_SERVICE,
   TokenValidation,
 } from '../constants';
 import { META_PUBLIC } from '../decorators/public.decorator';
 import { KeycloakConnectConfig } from '../interface/keycloak-connect-options.interface';
 import { extractRequestAndAttachCookie, useKeycloak } from '../internal.util';
 import { KeycloakMultiTenantService } from '../services/keycloak-multitenant.service';
+import { KeycloakTokenCacheService } from '../services/keycloak-token-cache.service';
 import { parseToken } from '../util';
 
 /**
@@ -37,6 +40,9 @@ export class AuthGuard implements CanActivate {
     @Inject(KEYCLOAK_MULTITENANT_SERVICE)
     private multiTenant: KeycloakMultiTenantService,
     private readonly reflector: Reflector,
+    @Optional()
+    @Inject(KEYCLOAK_TOKEN_CACHE_SERVICE)
+    private readonly tokenCache: KeycloakTokenCacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -68,7 +74,7 @@ export class AuthGuard implements CanActivate {
       return true;
     }
 
-    this.logger.verbose(`Validating jwt`, { jwt });
+    this.logger.verbose(`Validating jwt`);
 
     let isValidToken = false;
 
@@ -97,27 +103,40 @@ export class AuthGuard implements CanActivate {
 
     // Valid token should return, this time we warn
     if (isPublic) {
-      this.logger.warn(`A jwt token was retrieved but failed validation.`, {
-        jwt,
-      });
+      this.logger.warn(`A jwt token was retrieved but failed validation.`);
       return true;
     }
 
     throw new UnauthorizedException();
   }
 
-  private async validateToken(keycloak: KeycloakConnect.Keycloak, jwt: any) {
+  private async validateToken(
+    keycloak: KeycloakConnect.Keycloak,
+    jwt: string,
+  ): Promise<boolean> {
     const tokenValidation =
       this.keycloakOpts.tokenValidation || TokenValidation.ONLINE;
+    const cacheOpts = this.keycloakOpts.tokenCache;
+
+    // Check cache only for ONLINE validation (offline already validates locally)
+    if (
+      tokenValidation === TokenValidation.ONLINE &&
+      this.tokenCache &&
+      cacheOpts?.enabled
+    ) {
+      const cached = this.tokenCache.get(jwt);
+      if (cached !== undefined) {
+        return cached;
+      }
+    }
 
     const gm = keycloak.grantManager;
     let grant: KeycloakConnect.Grant;
 
     try {
-      grant = await gm.createGrant({ access_token: jwt });
+      grant = await gm.createGrant({ access_token: jwt as any });
     } catch (ex) {
       this.logger.warn(`Cannot validate access token: ${ex}`);
-      // It will fail to create grants on invalid access token (i.e expired or wrong domain)
       return false;
     }
 
@@ -128,21 +147,38 @@ export class AuthGuard implements CanActivate {
     );
 
     try {
-      let result: boolean | KeycloakConnect.Token;
+      let result: any;
+      let isValid = false;
 
       switch (tokenValidation) {
         case TokenValidation.ONLINE:
           result = await gm.validateAccessToken(token);
-          return result === token;
+          isValid = result === token;
+          break;
         case TokenValidation.OFFLINE:
           result = await gm.validateToken(token, 'Bearer');
-          return result === token;
+          isValid = result === token;
+          break;
         case TokenValidation.NONE:
           return true;
         default:
           this.logger.warn(`Unknown validation method: ${tokenValidation}`);
           return false;
       }
+
+      // Store result in cache for ONLINE validation
+      if (
+        tokenValidation === TokenValidation.ONLINE &&
+        this.tokenCache &&
+        cacheOpts?.enabled
+      ) {
+        const payload = parseToken(jwt);
+        if (payload?.exp) {
+          this.tokenCache.set(jwt, isValid, payload.exp, cacheOpts.maxTtl);
+        }
+      }
+
+      return isValid;
     } catch (ex) {
       this.logger.warn(`Cannot validate access token: ${ex}`);
     }
