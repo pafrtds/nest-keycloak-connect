@@ -1,6 +1,9 @@
 # compiled output
 /dist
 
+# npm pack tarballs
+*.tgz
+
 # Any node_modules
 node_modules
 
