@@ -1,44 +1,41 @@
 <div align="center">
-  
-# Nest Keycloak Connect
 
-### You are currently viewing the pre-release documentation for version 2.0. 
-## Click [here](https://github.com/ferrerojosh/nest-keycloak-connect/tree/v1.0) for the 1.0 stable release documentation.
-
-  
-![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/ferrerojosh/nest-keycloak-connect?style=for-the-badge)
-![GitHub License](https://img.shields.io/github/license/ferrerojosh/nest-keycloak-connect?style=for-the-badge)
-  
-![NPM Version](https://img.shields.io/npm/v/nest-keycloak-connect?style=for-the-badge)
-![NPM dev or peer Dependency Version](https://img.shields.io/npm/dependency-version/nest-keycloak-connect/peer/%40nestjs%2Fcommon?style=for-the-badge)
-![NPM dev or peer Dependency Version](https://img.shields.io/npm/dependency-version/nest-keycloak-connect/peer/keycloak-connect?style=for-the-badge)
-
-![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/ferrerojosh/nest-keycloak-connect/build.yml?style=for-the-badge)
-![NPM Weekly Downloads](https://img.shields.io/npm/dw/nest-keycloak-connect?style=for-the-badge)
-![NPM Total Downloads](https://img.shields.io/npm/dt/nest-keycloak-connect?style=for-the-badge)
+# @pafrtds/nest-keycloak-connect
 
 An adapter for [keycloak-nodejs-connect](https://github.com/keycloak/keycloak-nodejs-connect)
 
+![NPM Version](https://img.shields.io/npm/v/@pafrtds/nest-keycloak-connect?style=for-the-badge)
+![GitHub License](https://img.shields.io/github/license/pafrtds/nest-keycloak-connect?style=for-the-badge)
+
 </div>
+
+## Compatibility
+
+| Package version | NestJS version |
+| --------------- | -------------- |
+| 1.x             | 10, **11**     |
+
+> This package includes fixes for full compatibility with **NestJS 11**, including proper `Reflector` injection and `Unauthorized` response handling.
 
 ## Features
 
 - Protect your resources using [Keycloak's Authorization Services](https://www.keycloak.org/docs/latest/authorization_services/).
 - Simply add `@Resource`, `@Scopes`, or `@Roles` in your controllers and you're good to go.
 - Compatible with [Fastify](https://github.com/fastify/fastify) platform.
+- **Compatible with NestJS 11.**
 
 ## Installation
-
-### Yarn
-
-```bash
-yarn add nest-keycloak-connect keycloak-connect
-```
 
 ### NPM
 
 ```bash
-npm install nest-keycloak-connect keycloak-connect --save
+npm install @pafrtds/nest-keycloak-connect keycloak-connect --save
+```
+
+### Yarn
+
+```bash
+yarn add @pafrtds/nest-keycloak-connect keycloak-connect
 ```
 
 ## Getting Started
@@ -76,13 +73,12 @@ import {
   KeycloakConnectOptionsFactory,
   PolicyEnforcementMode,
   TokenValidation,
-} from 'nest-keycloak-connect';
+} from '@pafrtds/nest-keycloak-connect';
 
 @Injectable()
 export class KeycloakConfigService implements KeycloakConnectOptionsFactory {
   createKeycloakConnectOptions(): KeycloakConnectOptions {
     return {
-      // http://localhost:8080/auth for older keycloak versions
       authServerUrl: 'http://localhost:8080',
       realm: 'master',
       clientId: 'my-nestjs-app',
@@ -136,7 +132,7 @@ providers: [
 export class CatsController {}
 ```
 
-## What does these providers do ?
+## What does these providers do?
 
 ### AuthGuard
 
@@ -164,7 +160,7 @@ import {
   Scopes,
   Public,
   RoleMatchingMode,
-} from 'nest-keycloak-connect';
+} from '@pafrtds/nest-keycloak-connect';
 import { Controller, Get, Delete, Put, Post, Param } from '@nestjs/common';
 import { Product } from './product';
 import { ProductService } from './product.service';
@@ -180,12 +176,6 @@ export class ProductController {
     return await this.service.findAll();
   }
 
-  @Get()
-  @Roles({ roles: ['admin', 'other'] })
-  async findAllBarcodes() {
-    return await this.service.findAllBarcodes();
-  }
-
   @Get(':code')
   @Scopes('View')
   async findByCode(@Param('code') code: string) {
@@ -194,12 +184,6 @@ export class ProductController {
 
   @Post()
   @Scopes('Create')
-  @ConditionalScopes((request, token) => {
-    if (token.hasRealmRole('sysadmin')) {
-      return ['Overwrite'];
-    }
-    return [];
-  })
   async create(@Body() product: Product) {
     return await this.service.create(product);
   }
@@ -221,8 +205,6 @@ export class ProductController {
 
 ## Decorators
 
-Here is the decorators you can use in your controllers.
-
 | Decorator          | Description                                                                                               |
 | ------------------ | --------------------------------------------------------------------------------------------------------- |
 | @KeycloakUser      | Retrieves the current Keycloak logged-in user. (must be per method, unless controller is request scoped.) |
@@ -234,38 +216,6 @@ Here is the decorators you can use in your controllers.
 | @Scopes            | Keycloak application scopes.                                                                              |
 | @ConditionalScopes | Conditional keycloak application scopes.                                                                  |
 | @Roles             | Keycloak realm/application roles.                                                                         |
-
-## Multi tenant configuration
-
-Setting up for multi-tenant is configured as an option in your configuration:
-
-```typescript
-{
-  // Add /auth for older keycloak versions
-  authServerUrl: 'http://localhost:8180/', // will be used as fallback
-  clientId: 'nest-api', // will be used as fallback
-  secret: 'fallback', // will be used as fallback
-  multiTenant: {
-    resolveAlways: true,
-    realmResolver: (request) => {
-      return request.get('host').split('.')[0];
-    },
-    realmSecretResolver: (realm, request) => {
-      const secrets = { master: 'secret', slave: 'password' };
-      return secrets[realm];
-    },
-    realmClientIdResolver: (realm, request) => {
-      const clientIds = { master: 'angular-app', slave: 'vue-app' };
-      return clientIds[realm];
-    },
-    // note to add /auth for older keycloak versions
-    realmAuthServerUrlResolver: (realm, request) => {
-      const authServerUrls = { master: 'https://master.local/', slave: 'https://slave.local/' };
-      return authServerUrls[realm];
-    }
-  }
-}
-```
 
 ## Configuration options
 
@@ -293,6 +243,34 @@ For Keycloak options, refer to the official [keycloak-connect](https://github.co
 | realmAuthServerUrlResolver | A function that passes the realm string, and an optional request and returns the auth server url string | no       | -       |
 | realmClientIdResolver      | A function that passes the realm string, and an optional request and returns the client-id string       | no       | -       |
 
-## Example app
+## Multi tenant configuration
 
-An [example application](example) is provided in the source code with both Keycloak Realm and Postman requests for you to experiment with.
+```typescript
+{
+  authServerUrl: 'http://localhost:8180/',
+  clientId: 'nest-api',
+  secret: 'fallback',
+  multiTenant: {
+    resolveAlways: true,
+    realmResolver: (request) => {
+      return request.get('host').split('.')[0];
+    },
+    realmSecretResolver: (realm, request) => {
+      const secrets = { master: 'secret', slave: 'password' };
+      return secrets[realm];
+    },
+    realmClientIdResolver: (realm, request) => {
+      const clientIds = { master: 'angular-app', slave: 'vue-app' };
+      return clientIds[realm];
+    },
+    realmAuthServerUrlResolver: (realm, request) => {
+      const authServerUrls = { master: 'https://master.local/', slave: 'https://slave.local/' };
+      return authServerUrls[realm];
+    }
+  }
+}
+```
+
+## License
+
+MIT — Copyright (c) 2020 John Joshua Ferrer, 2026 Lucas Paes

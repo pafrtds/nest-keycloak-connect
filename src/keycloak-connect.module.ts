@@ -1,4 +1,5 @@
 import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import {
   KEYCLOAK_CONNECT_OPTIONS,
   KEYCLOAK_MULTITENANT_SERVICE,
@@ -54,6 +55,7 @@ export class KeycloakConnectModule {
         provide: KEYCLOAK_MULTITENANT_SERVICE,
         useClass: KeycloakMultiTenantService,
       },
+      Reflector,
     ];
     return {
       module: KeycloakConnectModule,
@@ -86,6 +88,7 @@ export class KeycloakConnectModule {
         provide: KEYCLOAK_MULTITENANT_SERVICE,
         useClass: KeycloakMultiTenantService,
       },
+      Reflector,
     ];
 
     if (options.useExisting || options.useFactory) {

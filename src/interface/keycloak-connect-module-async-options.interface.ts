@@ -4,7 +4,7 @@ import { KeycloakConnectOptionsFactory } from './keycloak-connect-options-factor
 import { KeycloakConnectOptions } from './keycloak-connect-options.interface';
 
 export interface KeycloakConnectModuleAsyncOptions
-  extends Pick<ModuleMetadata, 'imports'> {
+  extends Partial<Pick<ModuleMetadata, 'imports'>> {
   inject?: any[];
   useExisting?: Type<KeycloakConnectOptionsFactory>;
   useClass?: Type<KeycloakConnectOptionsFactory>;

@@ -28,7 +28,6 @@ import { parseToken } from '../util';
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
-  private readonly reflector = new Reflector();
 
   constructor(
     @Inject(KEYCLOAK_INSTANCE)
@@ -37,6 +36,7 @@ export class AuthGuard implements CanActivate {
     private keycloakOpts: KeycloakConnectConfig,
     @Inject(KEYCLOAK_MULTITENANT_SERVICE)
     private multiTenant: KeycloakMultiTenantService,
+    private readonly reflector: Reflector,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -70,14 +70,20 @@ export class AuthGuard implements CanActivate {
 
     this.logger.verbose(`Validating jwt`, { jwt });
 
-    const keycloak = await useKeycloak(
-      request,
-      jwt,
-      this.singleTenant,
-      this.multiTenant,
-      this.keycloakOpts,
-    );
-    const isValidToken = await this.validateToken(keycloak, jwt);
+    let isValidToken = false;
+
+    try {
+      const keycloak = await useKeycloak(
+        request,
+        jwt,
+        this.singleTenant,
+        this.multiTenant,
+        this.keycloakOpts,
+      );
+      isValidToken = await this.validateToken(keycloak, jwt);
+    } catch (ex) {
+      this.logger.warn(`Token validation error: ${ex}`);
+    }
 
     if (isValidToken) {
       // Attach user info object
