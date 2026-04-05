@@ -11,7 +11,7 @@
     "rootDir": "./src",
     "baseUrl": "./",
     "noLib": false,
-    "lib": ["es2019"],
+    "lib": ["es2020", "dom"],
     "esModuleInterop": true
   },
   "include": ["src/**/*.ts"],

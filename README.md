@@ -2,7 +2,7 @@
 
 # @pafrtds/nest-keycloak-connect
 
-An adapter for [keycloak-nodejs-connect](https://github.com/keycloak/keycloak-nodejs-connect)
+A Keycloak authentication and authorization module for NestJS, powered by [`jose`](https://github.com/panva/jose).
 
 ![NPM Version](https://img.shields.io/npm/v/@pafrtds/nest-keycloak-connect?style=for-the-badge)
 ![GitHub License](https://img.shields.io/github/license/pafrtds/nest-keycloak-connect?style=for-the-badge)
@@ -15,47 +15,45 @@ An adapter for [keycloak-nodejs-connect](https://github.com/keycloak/keycloak-no
 | --------------- | -------------- |
 | 1.x             | 10, **11**     |
 
-> This package includes fixes for full compatibility with **NestJS 11**, including proper `Reflector` injection and `Unauthorized` response handling.
+> This package is fully compatible with **NestJS 11** and uses `jose` for JWT validation instead of the deprecated `keycloak-nodejs-connect`.
 
 ## Features
 
 - Protect your resources using [Keycloak's Authorization Services](https://www.keycloak.org/docs/latest/authorization_services/).
-- Simply add `@Resource`, `@Scopes`, or `@Roles` in your controllers and you're good to go.
+- Simply add `@Resource`, `@Scopes`, `@Roles`, or `@Groups` in your controllers and you're good to go.
+- JWT validation via JWKS using [`jose`](https://github.com/panva/jose) — no deprecated dependencies.
+- Online token validation cache to avoid hitting Keycloak on every request.
 - Compatible with [Fastify](https://github.com/fastify/fastify) platform.
 - **Compatible with NestJS 11.**
 
 ## Installation
 
-### NPM
-
 ```bash
-npm install @pafrtds/nest-keycloak-connect keycloak-connect --save
-```
-
-### Yarn
-
-```bash
-yarn add @pafrtds/nest-keycloak-connect keycloak-connect
+npm install @pafrtds/nest-keycloak-connect --save
 ```
 
 ## Getting Started
 
 ### Module registration
 
-Registering the module:
-
 ```typescript
+import {
+  KeycloakConnectModule,
+  PolicyEnforcementMode,
+  TokenValidation,
+} from '@pafrtds/nest-keycloak-connect';
+
 KeycloakConnectModule.register({
-  authServerUrl: 'http://localhost:8080', // might be http://localhost:8080/auth for older keycloak versions
+  authServerUrl: 'http://localhost:8080',
   realm: 'master',
   clientId: 'my-nestjs-app',
   secret: 'secret',
   policyEnforcement: PolicyEnforcementMode.PERMISSIVE, // optional
-  tokenValidation: TokenValidation.ONLINE, // optional
+  tokenValidation: TokenValidation.ONLINE,             // optional
 });
 ```
 
-Async registration is also available:
+Async registration:
 
 ```typescript
 KeycloakConnectModule.registerAsync({
@@ -90,41 +88,20 @@ export class KeycloakConfigService implements KeycloakConnectOptionsFactory {
 }
 ```
 
-You can also register by just providing the `keycloak.json` path and an optional module configuration:
-
-```typescript
-KeycloakConnectModule.register(`./keycloak.json`, {
-  policyEnforcement: PolicyEnforcementMode.PERMISSIVE,
-  tokenValidation: TokenValidation.ONLINE,
-});
-```
-
 ### Guards
 
-Register any of the guards either globally, or scoped in your controller.
-
-#### Global registration using APP_GUARD token
-
-**_NOTE: These are in order, see https://docs.nestjs.com/guards#binding-guards for more information._**
+Register globally via `APP_GUARD` (recommended order):
 
 ```typescript
 providers: [
-  {
-    provide: APP_GUARD,
-    useClass: AuthGuard,
-  },
-  {
-    provide: APP_GUARD,
-    useClass: ResourceGuard,
-  },
-  {
-    provide: APP_GUARD,
-    useClass: RoleGuard,
-  },
+  { provide: APP_GUARD, useClass: AuthGuard },
+  { provide: APP_GUARD, useClass: ResourceGuard },
+  { provide: APP_GUARD, useClass: RoleGuard },
+  { provide: APP_GUARD, useClass: GroupGuard },
 ];
 ```
 
-#### Scoped registration
+Or scoped to a controller:
 
 ```typescript
 @Controller('cats')
@@ -132,143 +109,145 @@ providers: [
 export class CatsController {}
 ```
 
-## What does these providers do?
+## Guards
 
 ### AuthGuard
 
-Adds an authentication guard, you can also have it scoped if you like (using regular `@UseGuards(AuthGuard)` in your controllers). By default, it will throw a 401 unauthorized when it is unable to verify the JWT token or `Bearer` header is missing.
+Returns **401 Unauthorized** when the JWT is missing or invalid. Validates tokens against Keycloak's JWKS endpoint.
 
 ### ResourceGuard
 
-Adds a resource guard, which is permissive by default (can be configured see [options](#nest-keycloak-options)). Only controllers annotated with `@Resource` and methods with `@Scopes` are handled by this guard.
-
-**_NOTE: This guard is not necessary if you are using role-based authorization exclusively. You can use role guard exclusively for that._**
+Enforces resource-level permissions via Keycloak's UMA authorization endpoint. Requires `@Resource` + `@Scopes` on the controller/method.
 
 ### RoleGuard
 
-Adds a role guard, **can only be used in conjunction with resource guard when enforcement policy is PERMISSIVE**, unless you only use role guard exclusively.
-Permissive by default. Used by controller methods annotated with `@Roles` (matching can be configured)
+Checks realm or client roles from the token claims. Requires `@Roles` on the method.
+
+### GroupGuard
+
+Checks group membership from the `groups` claim in the JWT. Requires `@Groups` on the method.
+
+> To enable the `groups` claim: Keycloak → Client → Client scopes → Add mapper → **Group Membership** → Token Claim Name: `groups`
 
 ## Configuring controllers
 
-In your controllers, simply do:
-
 ```typescript
 import {
-  Resource,
-  Roles,
-  Scopes,
-  Public,
-  RoleMatchingMode,
+  Resource, Roles, Scopes, Groups, Public,
+  RoleMatchingMode, GroupMatchingMode, GroupMatch,
 } from '@pafrtds/nest-keycloak-connect';
-import { Controller, Get, Delete, Put, Post, Param } from '@nestjs/common';
-import { Product } from './product';
-import { ProductService } from './product.service';
 
 @Controller()
-@Resource(Product.name)
+@Resource('product')
 export class ProductController {
-  constructor(private service: ProductService) {}
 
   @Get()
   @Public()
-  async findAll() {
-    return await this.service.findAll();
-  }
+  async findAll() { ... }
 
-  @Get(':code')
-  @Scopes('View')
-  async findByCode(@Param('code') code: string) {
-    return await this.service.findByCode(code);
-  }
+  @Get(':id')
+  @Scopes('view')
+  async findOne() { ... }
 
   @Post()
-  @Scopes('Create')
-  async create(@Body() product: Product) {
-    return await this.service.create(product);
-  }
+  @Scopes('create')
+  @Roles({ roles: ['manager', 'realm:admin'] })
+  async create() { ... }
 
-  @Delete(':code')
-  @Scopes('Delete')
-  @Roles({ roles: ['admin', 'realm:sysadmin'], mode: RoleMatchingMode.ALL })
-  async deleteByCode(@Param('code') code: string) {
-    return await this.service.deleteByCode(code);
-  }
+  @Delete(':id')
+  @Scopes('delete')
+  @Groups('/org/admins')
+  async remove() { ... }
 
-  @Put(':code')
-  @Scopes('Edit')
-  async update(@Param('code') code: string, @Body() product: Product) {
-    return await this.service.update(code, product);
-  }
+  @Put(':id')
+  @Scopes('edit')
+  @Groups('/org/admins', '/org/editors')
+  @GroupMatchingMode(GroupMatch.ALL) // must belong to BOTH groups
+  async update() { ... }
+}
+```
+
+## Token Validation Cache
+
+Caches online validation results to avoid calling Keycloak on every request. The TTL is derived from the token's `exp` claim.
+
+> **Note:** revoked tokens may be accepted until the cache entry expires. Use a short `maxTtl` in environments requiring immediate revocation.
+
+```typescript
+KeycloakConnectModule.register({
+  // ...
+  tokenValidation: TokenValidation.ONLINE,
+  tokenCache: {
+    enabled: true,
+    maxTtl: 30, // max 30 seconds, regardless of token lifetime
+  },
+});
+```
+
+To manually invalidate a token (e.g. after logout):
+
+```typescript
+constructor(private readonly tokenCache: KeycloakTokenCacheService) {}
+
+async logout(accessToken: string) {
+  this.tokenCache.invalidate(accessToken);
 }
 ```
 
 ## Decorators
 
-| Decorator          | Description                                                                                               |
-| ------------------ | --------------------------------------------------------------------------------------------------------- |
-| @KeycloakUser      | Retrieves the current Keycloak logged-in user. (must be per method, unless controller is request scoped.) |
-| @AccessToken       | Retrieves the access token used in the request                                                            |
-| @ResolvedScopes    | Retrieves the resolved scopes (used in @ConditionalScopes)                                                |
-| @EnforcerOptions   | Keycloak enforcer options.                                                                                |
-| @Public            | Allow any user to use the route.                                                                          |
-| @Resource          | Keycloak application resource name.                                                                       |
-| @Scopes            | Keycloak application scopes.                                                                              |
-| @ConditionalScopes | Conditional keycloak application scopes.                                                                  |
-| @Roles             | Keycloak realm/application roles.                                                                         |
+| Decorator            | Description                                                               |
+| -------------------- | ------------------------------------------------------------------------- |
+| `@KeycloakUser`      | Retrieves the current Keycloak user from the request.                     |
+| `@AccessToken`       | Retrieves the raw access token string from the request.                   |
+| `@ResolvedScopes`    | Retrieves the resolved scopes (used with `@ConditionalScopes`).           |
+| `@EnforcerOptions`   | Keycloak enforcer options for `ResourceGuard`.                            |
+| `@Public`            | Allows unauthenticated access to the route.                               |
+| `@Resource`          | Keycloak resource name (used with `ResourceGuard`).                       |
+| `@Scopes`            | Required scopes on a resource (used with `ResourceGuard`).                |
+| `@ConditionalScopes` | Dynamic scopes resolved at request time.                                  |
+| `@Roles`             | Required realm or client roles (used with `RoleGuard`).                   |
+| `@RoleMatchingMode`  | Sets `RoleMatch.ANY` (default) or `RoleMatch.ALL` for `@Roles`.           |
+| `@Groups`            | Required Keycloak group membership (used with `GroupGuard`).              |
+| `@GroupMatchingMode` | Sets `GroupMatch.ANY` (default) or `GroupMatch.ALL` for `@Groups`.        |
+
+## Token Validation Modes
+
+| Mode      | Description                                                                                  |
+| --------- | -------------------------------------------------------------------------------------------- |
+| `ONLINE`  | Verifies JWT signature via JWKS **and** calls Keycloak's introspection endpoint per request. Detects revoked tokens. |
+| `OFFLINE` | Verifies JWT signature via JWKS only. Fast, no per-request Keycloak calls. Does not detect revocation. |
+| `NONE`    | Skips all validation. Use only in development or internal trusted networks.                  |
 
 ## Configuration options
 
-### Keycloak Options
+| Option            | Description                                                                 | Default      |
+| ----------------- | --------------------------------------------------------------------------- | ------------ |
+| `authServerUrl`   | Keycloak server URL                                                         | required     |
+| `realm`           | Realm name                                                                  | required     |
+| `clientId`        | Client/Application ID                                                       | required     |
+| `secret`          | Client secret                                                               | required     |
+| `cookieKey`       | Cookie key for JWT extraction                                               | `KEYCLOAK_JWT` |
+| `policyEnforcement` | `PERMISSIVE` or `ENFORCING` for `ResourceGuard`                           | `PERMISSIVE` |
+| `tokenValidation` | `ONLINE`, `OFFLINE`, or `NONE`                                              | `ONLINE`     |
+| `tokenCache`      | Cache config: `{ enabled, maxTtl? }`                                        | disabled     |
+| `multiTenant`     | Multi-tenant options                                                        | —            |
+| `roleMerge`       | `OVERRIDE` or `ALL` for `@Roles` merge strategy                             | `OVERRIDE`   |
 
-For Keycloak options, refer to the official [keycloak-connect](https://github.com/keycloak/keycloak-nodejs-connect/blob/main/middleware/auth-utils/config.js) library.
-
-### Nest Keycloak Options
-
-| Option            | Description                                                              | Required | Default      |
-| ----------------- | ------------------------------------------------------------------------ | -------- | ------------ |
-| cookieKey         | Cookie Key                                                               | no       | KEYCLOAK_JWT |
-| policyEnforcement | Sets the policy enforcement mode                                         | no       | PERMISSIVE   |
-| tokenValidation   | Sets the token validation method                                         | no       | ONLINE       |
-| multiTenant       | Sets the options for [multi-tenant configuration](#multi-tenant-options) | no       | -            |
-| roleMerge         | Sets the merge mode for @Role decorator                                  | no       | OVERRIDE     |
-
-### Multi Tenant Options
-
-| Option                     | Description                                                                                             | Required | Default |
-| -------------------------- | ------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| resolveAlways              | Option to always resolve the realm and secret. Disabled by default.                                     | no       | false   |
-| realmResolver              | A function that passes a request (from respective platform i.e express or fastify) and returns a string | yes      | -       |
-| realmSecretResolver        | A function that passes the realm string, and an optional request and returns the secret string          | no       | -       |
-| realmAuthServerUrlResolver | A function that passes the realm string, and an optional request and returns the auth server url string | no       | -       |
-| realmClientIdResolver      | A function that passes the realm string, and an optional request and returns the client-id string       | no       | -       |
-
-## Multi tenant configuration
+## Multi-tenant configuration
 
 ```typescript
-{
-  authServerUrl: 'http://localhost:8180/',
+KeycloakConnectModule.register({
+  authServerUrl: 'http://localhost:8080',
   clientId: 'nest-api',
-  secret: 'fallback',
+  secret: 'fallback-secret',
   multiTenant: {
-    resolveAlways: true,
-    realmResolver: (request) => {
-      return request.get('host').split('.')[0];
-    },
-    realmSecretResolver: (realm, request) => {
-      const secrets = { master: 'secret', slave: 'password' };
-      return secrets[realm];
-    },
-    realmClientIdResolver: (realm, request) => {
-      const clientIds = { master: 'angular-app', slave: 'vue-app' };
-      return clientIds[realm];
-    },
-    realmAuthServerUrlResolver: (realm, request) => {
-      const authServerUrls = { master: 'https://master.local/', slave: 'https://slave.local/' };
-      return authServerUrls[realm];
-    }
-  }
-}
+    realmResolver: (request) => request.get('host').split('.')[0],
+    realmSecretResolver: (realm) => secretsMap[realm],
+    realmClientIdResolver: (realm) => clientIdMap[realm],
+    realmAuthServerUrlResolver: (realm) => authServerUrlMap[realm],
+  },
+});
 ```
 
 ## License

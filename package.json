@@ -41,11 +41,13 @@
     ".": "./dist/index.js",
     "./*": "./dist/*"
   },
+  "dependencies": {
+    "jose": "^6.2.2"
+  },
   "peerDependencies": {
-    "@nestjs/common": ">=6.0.0 <13.0.0",
-    "@nestjs/core": ">=6.0.0 <13.0.0",
-    "@nestjs/graphql": ">=6",
-    "keycloak-connect": ">=10.0.0"
+    "@nestjs/common": ">=10.0.0 <13.0.0",
+    "@nestjs/core": ">=10.0.0 <13.0.0",
+    "@nestjs/graphql": ">=6"
   },
   "devDependencies": {
     "@nestjs/common": "^11.0.6",
@@ -84,5 +86,8 @@
       "prettier --write",
       "eslint"
     ]
+  },
+  "dependencies": {
+    "jose": "^6.2.2"
   }
 }

@@ -2,6 +2,7 @@ import { DynamicModule, Logger, Module, Provider } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import {
   KEYCLOAK_CONNECT_OPTIONS,
+  KEYCLOAK_JOSE_SERVICE,
   KEYCLOAK_MULTITENANT_SERVICE,
   KEYCLOAK_TOKEN_CACHE_SERVICE,
 } from './constants';
@@ -11,10 +12,8 @@ import {
   KeycloakConnectOptions,
   NestKeycloakConfig,
 } from './interface/keycloak-connect-options.interface';
-import {
-  createKeycloakConnectOptionProvider,
-  keycloakProvider,
-} from './keycloak-connect.providers';
+import { createKeycloakConnectOptionProvider } from './keycloak-connect.providers';
+import { KeycloakJoseService } from './services/keycloak-jose.service';
 import { KeycloakMultiTenantService } from './services/keycloak-multitenant.service';
 import { KeycloakTokenCacheService } from './services/keycloak-token-cache.service';
 
@@ -34,6 +33,7 @@ export * from './guards/role.guard';
 export * from './interface/keycloak-connect-module-async-options.interface';
 export * from './interface/keycloak-connect-options-factory.interface';
 export * from './interface/keycloak-connect-options.interface';
+export * from './services/keycloak-jose.service';
 export * from './services/keycloak-multitenant.service';
 export * from './services/keycloak-token-cache.service';
 export * from './util';
@@ -42,11 +42,6 @@ export * from './util';
 export class KeycloakConnectModule {
   static logger = new Logger(KeycloakConnectModule.name);
 
-  /**
-   * Register the `KeycloakConnect` module.
-   * @param opts `keycloak.json` path in string or {@link NestKeycloakConfig} object.
-   * @param config {@link NestKeycloakConfig} when using `keycloak.json` path, optional
-   */
   public static register(
     opts: KeycloakConnectOptions,
     config?: NestKeycloakConfig,
@@ -76,17 +71,12 @@ export class KeycloakConnectModule {
   private static buildProviders(optionsProvider: Provider): Provider[] {
     return [
       optionsProvider,
-      keycloakProvider,
       KeycloakMultiTenantService,
-      {
-        provide: KEYCLOAK_MULTITENANT_SERVICE,
-        useClass: KeycloakMultiTenantService,
-      },
+      { provide: KEYCLOAK_MULTITENANT_SERVICE, useClass: KeycloakMultiTenantService },
+      KeycloakJoseService,
+      { provide: KEYCLOAK_JOSE_SERVICE, useClass: KeycloakJoseService },
       KeycloakTokenCacheService,
-      {
-        provide: KEYCLOAK_TOKEN_CACHE_SERVICE,
-        useClass: KeycloakTokenCacheService,
-      },
+      { provide: KEYCLOAK_TOKEN_CACHE_SERVICE, useClass: KeycloakTokenCacheService },
       Reflector,
     ];
   }
@@ -104,10 +94,7 @@ export class KeycloakConnectModule {
 
     return [
       ...reqProviders,
-      {
-        provide: options.useClass,
-        useClass: options.useClass,
-      },
+      { provide: options.useClass, useClass: options.useClass },
     ];
   }
 

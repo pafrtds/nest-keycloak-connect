@@ -93,3 +93,8 @@ export enum GroupMatch {
  * Key for injecting the token cache service.
  */
 export const KEYCLOAK_TOKEN_CACHE_SERVICE = 'KEYCLOAK_TOKEN_CACHE_SERVICE';
+
+/**
+ * Key for injecting the jose service.
+ */
+export const KEYCLOAK_JOSE_SERVICE = 'KEYCLOAK_JOSE_SERVICE';

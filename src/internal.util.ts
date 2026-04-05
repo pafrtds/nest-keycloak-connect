@@ -1,37 +1,13 @@
 import { ContextType, ExecutionContext } from '@nestjs/common';
-import KeycloakConnect from 'keycloak-connect';
 import { KeycloakConnectConfig } from './interface/keycloak-connect-options.interface';
 import { KeycloakMultiTenantService } from './services/keycloak-multitenant.service';
+import { RealmConfig } from './services/keycloak-jose.service';
 import { parseToken } from './util';
 
-// Confusing and all, but I needed to extract this fn to avoid more repeating code
-// TODO: Rework in 2.0
-export const useKeycloak = async (
-  request: any,
-  jwt: string,
-  singleTenant: KeycloakConnect.Keycloak,
-  multiTenant: KeycloakMultiTenantService,
-  opts: KeycloakConnectConfig,
-): Promise<KeycloakConnect.Keycloak> => {
-  if (opts.multiTenant && opts.multiTenant.realmResolver) {
-    const resolvedRealm = opts.multiTenant.realmResolver(request);
-    const realm =
-      resolvedRealm instanceof Promise ? await resolvedRealm : resolvedRealm;
-    return await multiTenant.get(realm, request);
-  } else if (!opts.realm) {
-    const payload = parseToken(jwt);
-    const issuerRealm = payload.iss.split('/').pop();
-    return await multiTenant.get(issuerRealm, request);
-  }
-  return singleTenant;
-};
-
 export const attachCookieToHeader = (request: any, cookieKey: string) => {
-  // Attach cookie as authorization header
   if (request && request.cookies && request.cookies[cookieKey]) {
     request.headers.authorization = `Bearer ${request.cookies[cookieKey]}`;
   }
-
   return request;
 };
 
@@ -40,25 +16,18 @@ type GqlContextType = 'graphql' | ContextType;
 export const extractRequest = (context: ExecutionContext): [any, any] => {
   let request: any, response: any;
 
-  // Check if request is coming from graphql or http
   if (context.getType() === 'http') {
-    // http request
     const httpContext = context.switchToHttp();
-
     request = httpContext.getRequest();
     response = httpContext.getResponse();
   } else if (context.getType<GqlContextType>() === 'graphql') {
     let gql: any;
-    // Check if graphql is installed
     try {
       gql = require('@nestjs/graphql');
     } catch (er) {
       throw new Error('@nestjs/graphql is not installed, cannot proceed');
     }
-
-    // graphql request
     const gqlContext = gql.GqlExecutionContext.create(context).getContext();
-
     request = gqlContext.req;
     response = gqlContext.res;
   }
@@ -72,6 +41,58 @@ export const extractRequestAndAttachCookie = (
 ) => {
   const [tmpRequest, response] = extractRequest(context);
   const request = attachCookieToHeader(tmpRequest, cookieKey);
-
   return [request, response];
+};
+
+/**
+ * Resolves the realm configuration for the current request.
+ * Handles single-tenant, multi-tenant, and auto-realm-from-token scenarios.
+ */
+export const resolveRealmConfig = async (
+  request: any,
+  jwt: string,
+  opts: KeycloakConnectConfig,
+  multiTenant: KeycloakMultiTenantService,
+): Promise<RealmConfig> => {
+  const authServerUrl =
+    opts.authServerUrl ||
+    opts['auth-server-url'] ||
+    opts.serverUrl ||
+    opts['server-url'];
+
+  if (opts.multiTenant?.realmResolver) {
+    const resolved = opts.multiTenant.realmResolver(request);
+    const realm = resolved instanceof Promise ? await resolved : resolved;
+
+    const [secret, clientId, realmAuthServerUrl] = await Promise.all([
+      multiTenant.resolveSecret(realm, request),
+      multiTenant.resolveClientId(realm, request),
+      multiTenant.resolveAuthServerUrl(realm, request),
+    ]);
+
+    return {
+      authServerUrl: realmAuthServerUrl || authServerUrl,
+      realm,
+      clientId,
+      secret,
+    };
+  }
+
+  if (!opts.realm) {
+    const payload = parseToken(jwt);
+    const realm = (payload.iss as string).split('/realms/').pop();
+    return {
+      authServerUrl,
+      realm,
+      clientId: opts.clientId || opts['client-id'],
+      secret: opts.secret,
+    };
+  }
+
+  return {
+    authServerUrl,
+    realm: opts.realm,
+    clientId: opts.clientId || opts['client-id'],
+    secret: opts.secret,
+  };
 };
